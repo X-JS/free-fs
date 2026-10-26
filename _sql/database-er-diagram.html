@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free-FS 数据库关系结构图</title>
+<style>
+  :root{
+    --bg:#0f1117; --surface:#12151d; --border:#202534; --text:#e2e4ed; --dim:#7b8299;
+    --blue:#4e8ef8; --cyan:#36d6e6; --green:#4ade80; --amber:#fbbf24; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden;
+       font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .header{padding:14px 24px 10px;border-bottom:1px solid var(--border);background:var(--surface);flex:none}
+  .header h1{font-size:16px;font-weight:600;margin:0;letter-spacing:.2px}
+  .header .meta{font-size:11.5px;color:var(--dim);margin-top:4px}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:9px 24px;border-bottom:1px solid var(--border);
+           background:var(--surface);flex-wrap:wrap;flex:none}
+  .search{background:#0c0f16;border:1px solid #273044;color:var(--text);border-radius:7px;padding:6px 11px;
+          font-size:12px;width:190px;outline:none}
+  .search:focus{border-color:#3d5fa8}
+  .search::placeholder{color:#5b6379}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #273044;border-radius:999px;
+        background:#0c0f16;font-size:11px;color:#c4cad8;cursor:pointer;user-select:none;transition:.15s}
+  .chip:hover{border-color:#3b4763;background:#111725}
+  .chip.off{opacity:.32;filter:grayscale(.4)}
+  .chip .dot{width:8px;height:8px;border-radius:50%}
+  .btns{display:flex;gap:6px;margin-left:4px}
+  button{background:#0c0f16;border:1px solid #273044;color:#c4cad8;border-radius:7px;padding:6px 11px;
+         font-size:12px;cursor:pointer;font-family:inherit;transition:.15s;line-height:1}
+  button:hover{border-color:#3b4763;background:#111725;color:#fff}
+  .hint{margin-left:auto;font-size:11px;color:#5b6379}
+  .stage{position:relative;flex:1;min-height:0;overflow:hidden;
+         background:radial-gradient(circle at 30% 20%,#141a27 0%,#0f1117 55%)}
+  svg{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  svg.grabbing{cursor:grabbing}
+  .zone rect{pointer-events:none}
+  .zone-label{font-size:11px;font-weight:600;letter-spacing:.5px;pointer-events:none}
+  .card{cursor:pointer;transition:opacity .16s}
+  .card .card-bg{transition:stroke-width .12s,filter .12s}
+  .card.hot .card-bg{stroke-width:2.4;filter:brightness(1.12)}
+  .card.rel .card-bg{stroke-width:1.8}
+  .card.dim{opacity:.16}
+  .card.search-dim{opacity:.12}
+  .card.search-hit .card-bg{stroke-width:2.4}
+  .card.group-hidden{display:none}
+  .edge{fill:none;stroke:#515c7a;stroke-width:1.15;opacity:.46;pointer-events:none;
+        transition:opacity .15s,stroke .15s,stroke-width .15s;marker-end:url(#arrow)}
+  .edge.hot{stroke:#5b9bff;stroke-width:2;opacity:.95;marker-end:url(#arrow-hot)}
+  .edge.cold{opacity:.04;marker-end:none}
+  .edge.self{stroke-dasharray:4 3}
+  .edge.group-hidden{display:none}
+  .lbl{font-size:9px;fill:#cfd6e8;opacity:0;pointer-events:none;
+       paint-order:stroke;stroke:#0f1117;stroke-width:3px;stroke-linejoin:round;transition:opacity .12s}
+  .lbl.show{opacity:1}
+  .lbl.group-hidden{display:none}
+  .t-name{font-size:10.5px;font-weight:600}
+  .t-cn{font-size:8.5px;fill:#798097}
+  .key{font-size:8px;font-weight:700;letter-spacing:.3px}
+  .col-name{font-size:9px;fill:#c3c9d8}
+  .col-type{font-size:8px;fill:#5f677c}
+  text{user-select:none}
+  .overlay{position:absolute;left:16px;bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+           max-width:calc(100% - 32px);padding:8px 13px;border:1px solid #252c3d;border-radius:9px;
+           background:rgba(15,17,23,.88);backdrop-filter:blur(6px);font-size:10.5px;color:#98a0b5}
+  .overlay span{display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .overlay b{font-size:8px;font-weight:700;letter-spacing:.3px}
+  .overlay .pk{color:#fbbf24}.overlay .fk{color:#36d6e6}.overlay .pf{color:#c084fc}.overlay .uq{color:#f472b6}
+  .overlay .sep{width:1px;height:13px;background:#2a3143}
+  .overlay .line{width:24px;height:0;border-top:1.4px solid #5b9bff}
+  .overlay .line.dash{border-top-style:dashed;border-top-color:#5f677c}
+  .overlay .dimnote{color:#5f677c}
+  @media (max-width:900px){ .hint{display:none} .search{width:150px} }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Free-FS 数据库关系结构图</h1>
+  <div class="meta">MySQL / PostgreSQL · 20 张数据表 · 40 条逻辑引用 · 依据 free-fs-new.sql / free-fs_pg.sql</div>
+</div>
+
+<div class="toolbar">
+  <input id="search" class="search" type="search" placeholder="搜索表名 / 字段…" autocomplete="off">
+  <div id="chips" class="chips"></div>
+  <div class="btns">
+    <button id="fit" type="button">适应窗口</button>
+    <button id="zin" type="button" title="放大">＋</button>
+    <button id="zout" type="button" title="缩小">－</button>
+    <button id="reset" type="button">重置</button>
+  </div>
+  <div class="hint">滚轮缩放 · 拖拽平移 · 悬停高亮 · 点击表聚焦</div>
+</div>
+
+<div class="stage">
+  <svg id="er" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+        <path d="M0,0 L10,4 L0,8 Z" fill="#66718f"/>
+      </marker>
+      <marker id="arrow-hot" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+        <path d="M0,0 L10,4 L0,8 Z" fill="#5b9bff"/>
+      </marker>
+    </defs>
+    <g id="zones"></g>
+    <g id="edges"></g>
+    <g id="cards"></g>
+    <g id="labels"></g>
+  </svg>
+
+  <div class="overlay">
+    <span><b class="pk">PK</b>主键</span>
+    <span><b class="fk">FK</b>外键</span>
+    <span><b class="pf">PF</b>主键+外键</span>
+    <span><b class="uq">UQ</b>唯一</span>
+    <span class="sep"></span>
+    <span><i class="line"></i>逻辑外键引用</span>
+    <span><i class="line dash"></i>自引用</span>
+    <span class="sep"></span>
+    <span class="dimnote">DDL 未声明物理外键；旧版订阅相关表已移除</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var GROUPS = {
+    identity:  { label: "用户与审计",     color: "#4e8ef8", head: "#17223a", light: "#8fb4ff" },
+    workspace: { label: "工作空间与权限", color: "#a78bfa", head: "#221b39", light: "#c9b8ff" },
+    storage:   { label: "存储与文件",     color: "#36d6e6", head: "#112a33", light: "#7ee7f2" },
+    sharing:   { label: "分享与收藏",     color: "#4ade80", head: "#152c1e", light: "#8ff0b2" },
+    collection:{ label: "文件收集",       color: "#fbbf24", head: "#2b2611", light: "#ffd766" }
+  };
+
+  var KEY = {
+    pk: ["PK", "#fbbf24"],
+    fk: ["FK", "#36d6e6"],
+    pf: ["PF", "#c084fc"],
+    uq: ["UQ", "#f472b6"]
+  };
+
+  /* ---------- 表结构（字段 = [名称, 类型, 键标记]） ---------- */
+  var RAW = [
+    ["sys_user", "用户表", "identity", [
+      ["id", "varchar", "pk"], ["username", "varchar"], ["password", "varchar"], ["email", "varchar"],
+      ["nickname", "varchar"], ["avatar", "varchar"], ["status", "int"], ["created_at", "datetime"],
+      ["updated_at", "datetime"], ["last_login_at", "datetime"]
+    ]],
+    ["sys_user_transfer_setting", "传输设置", "identity", [
+      ["id", "bigint", "pk"], ["user_id", "varchar", "fk"], ["download_location", "varchar"],
+      ["is_default_download_location", "tinyint"], ["download_speed_limit", "int"],
+      ["concurrent_upload_quantity", "int"], ["concurrent_download_quantity", "int"],
+      ["chunk_size", "bigint"], ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_login_log", "登录日志", "identity", [
+      ["id", "bigint", "pk"], ["user_id", "varchar", "fk"], ["username", "varchar"], ["login_ip", "varchar"],
+      ["login_address", "varchar"], ["browser", "varchar"], ["os", "varchar"], ["login_type", "varchar"],
+      ["status", "tinyint"], ["msg", "varchar"], ["login_time", "datetime"]
+    ]],
+    ["sys_operation_log", "操作日志", "identity", [
+      ["id", "bigint", "pk"], ["operator_id", "varchar", "fk"], ["operator_name", "varchar"],
+      ["workspace_id", "varchar", "fk"], ["operation_type", "varchar"], ["operation_name", "varchar"],
+      ["target_type", "varchar"], ["target_id", "varchar"], ["target_name", "varchar"], ["detail", "text"],
+      ["operation_ip", "varchar"], ["user_agent", "varchar"], ["status", "tinyint"],
+      ["error_message", "varchar"], ["operation_time", "datetime"]
+    ]],
+
+    ["sys_workspace", "工作空间", "workspace", [
+      ["id", "varchar", "pk"], ["name", "varchar"], ["slug", "varchar", "uq"], ["description", "varchar"],
+      ["owner_id", "varchar", "fk"], ["member_count", "int"], ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_role", "角色", "workspace", [
+      ["id", "int", "pk"], ["workspace_id", "varchar", "fk"], ["role_code", "varchar"], ["role_name", "varchar"],
+      ["description", "text"], ["role_type", "tinyint"], ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_workspace_member", "空间成员", "workspace", [
+      ["id", "bigint", "pk"], ["workspace_id", "varchar", "fk"], ["user_id", "varchar", "fk"],
+      ["role_id", "int", "fk"], ["joined_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_workspace_invitation", "空间邀请", "workspace", [
+      ["id", "varchar", "pk"], ["workspace_id", "varchar", "fk"], ["email", "varchar"],
+      ["role_id", "int", "fk"], ["invited_by", "varchar", "fk"], ["token", "varchar", "uq"],
+      ["status", "tinyint"], ["expires_at", "datetime"], ["accepted_at", "datetime"],
+      ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_permission", "权限", "workspace", [
+      ["id", "int", "pk"], ["permission_code", "varchar", "uq"], ["permission_name", "varchar"],
+      ["module", "varchar"], ["description", "varchar"], ["sort", "int"],
+      ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["sys_role_permission", "角色权限关联", "workspace", [
+      ["id", "int", "pk"], ["role_id", "int", "fk"], ["role_code", "varchar"],
+      ["permission_code", "varchar", "fk"]
+    ]],
+
+    ["storage_platform", "存储平台", "storage", [
+      ["id", "int", "pk"], ["name", "varchar"], ["identifier", "varchar", "uq"], ["config_scheme", "json"],
+      ["icon", "varchar"], ["link", "varchar"], ["is_default", "tinyint"], ["desc", "varchar"]
+    ]],
+    ["storage_settings", "存储配置", "storage", [
+      ["id", "varchar", "pk"], ["platform_identifier", "varchar", "fk"], ["config_data", "json"],
+      ["enabled", "tinyint"], ["workspace_id", "varchar", "fk"], ["created_at", "datetime"],
+      ["updated_at", "datetime"], ["remark", "varchar"], ["deleted", "tinyint"]
+    ]],
+    ["file_info", "文件资源", "storage", [
+      ["id", "varchar", "pk"], ["object_key", "varchar"], ["original_name", "varchar"],
+      ["display_name", "varchar"], ["suffix", "varchar"], ["size", "bigint"], ["mime_type", "varchar"],
+      ["is_dir", "tinyint"], ["parent_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
+      ["user_id", "varchar", "fk"], ["content_md5", "varchar"], ["storage_platform_setting_id", "varchar", "fk"],
+      ["upload_time", "datetime"], ["update_time", "datetime"], ["last_access_time", "datetime"],
+      ["is_deleted", "tinyint"], ["deleted_time", "datetime"]
+    ]],
+    ["file_transfer_task", "传输任务", "storage", [
+      ["id", "bigint", "pk"], ["task_id", "varchar", "uq"], ["upload_id", "varchar"],
+      ["parent_id", "varchar"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
+      ["collection_id", "varchar", "fk"], ["collection_submission_id", "varchar", "fk"],
+      ["storage_platform_setting_id", "varchar", "fk"], ["object_key", "varchar"],
+      ["file_id", "varchar", "fk"], ["file_name", "varchar"], ["file_size", "bigint"], ["file_md5", "varchar"],
+      ["suffix", "varchar"], ["mime_type", "varchar"], ["total_chunks", "int"], ["task_type", "varchar"],
+      ["uploaded_chunks", "int"], ["chunk_size", "bigint"], ["uploaded_size", "bigint"],
+      ["status", "varchar"], ["error_msg", "varchar"], ["start_time", "datetime"], ["complete_time", "datetime"],
+      ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+
+    ["file_shares", "文件分享", "sharing", [
+      ["id", "varchar", "pk"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
+      ["share_name", "varchar"], ["share_code", "varchar"], ["expire_time", "datetime"], ["scope", "varchar"],
+      ["view_count", "int"], ["max_view_count", "int"], ["download_count", "int"],
+      ["max_download_count", "int"], ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["file_share_items", "分享文件关联", "sharing", [
+      ["share_id", "varchar", "pf"], ["file_id", "varchar", "pf"], ["created_at", "datetime"]
+    ]],
+    ["file_share_access_record", "分享访问记录", "sharing", [
+      ["id", "bigint", "pk"], ["share_id", "varchar", "fk"], ["access_ip", "varchar"],
+      ["access_address", "varchar"], ["browser", "varchar"], ["os", "varchar"], ["access_time", "datetime"]
+    ]],
+    ["file_user_favorites", "文件收藏", "sharing", [
+      ["workspace_id", "varchar", "pf"], ["user_id", "varchar", "pf"], ["file_id", "varchar", "pf"],
+      ["favorite_time", "datetime"]
+    ]],
+
+    ["file_collections", "文件收集", "collection", [
+      ["id", "varchar", "pk"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
+      ["target_folder_id", "varchar", "fk"], ["storage_platform_setting_id", "varchar", "fk"],
+      ["collection_name", "varchar"], ["description", "varchar"], ["access_code_hash", "varchar"],
+      ["expire_time", "datetime"], ["max_file_size", "bigint"], ["allowed_extensions", "varchar"],
+      ["status", "varchar"], ["submission_count", "int"], ["file_count", "int"], ["total_size", "bigint"],
+      ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]],
+    ["file_collection_submissions", "收集提交记录", "collection", [
+      ["id", "varchar", "pk"], ["collection_id", "varchar", "fk"], ["submitter_name", "varchar"],
+      ["submitter_ip", "varchar"], ["user_agent", "varchar"], ["folder_id", "varchar", "fk"],
+      ["upload_token_hash", "varchar"], ["file_count", "int"], ["total_size", "bigint"],
+      ["status", "varchar"], ["completed_at", "datetime"], ["created_at", "datetime"], ["updated_at", "datetime"]
+    ]]
+  ];
+
+  /* ---------- 关系（子表.字段 → 父表.字段, 基数） ---------- */
+  var RELS = [
+    ["sys_workspace", "owner_id", "sys_user", "id", "N:1"],
+    ["sys_workspace_member", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["sys_workspace_member", "user_id", "sys_user", "id", "N:1"],
+    ["sys_workspace_member", "role_id", "sys_role", "id", "N:1"],
+    ["sys_workspace_invitation", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["sys_workspace_invitation", "role_id", "sys_role", "id", "N:1"],
+    ["sys_workspace_invitation", "invited_by", "sys_user", "id", "N:1"],
+    ["sys_role", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["sys_role_permission", "role_id", "sys_role", "id", "N:1"],
+    ["sys_role_permission", "permission_code", "sys_permission", "permission_code", "N:1"],
+    ["sys_user_transfer_setting", "user_id", "sys_user", "id", "1:1"],
+    ["sys_login_log", "user_id", "sys_user", "id", "N:1"],
+    ["sys_operation_log", "operator_id", "sys_user", "id", "N:1"],
+    ["sys_operation_log", "workspace_id", "sys_workspace", "id", "N:1"],
+
+    ["storage_settings", "platform_identifier", "storage_platform", "identifier", "N:1"],
+    ["storage_settings", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_info", "storage_platform_setting_id", "storage_settings", "id", "N:1"],
+    ["file_info", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_info", "user_id", "sys_user", "id", "N:1"],
+    ["file_info", "parent_id", "file_info", "id", "N:1"],
+    ["file_transfer_task", "storage_platform_setting_id", "storage_settings", "id", "N:1"],
+    ["file_transfer_task", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_transfer_task", "user_id", "sys_user", "id", "N:1"],
+    ["file_transfer_task", "file_id", "file_info", "id", "N:1"],
+    ["file_transfer_task", "collection_id", "file_collections", "id", "N:1"],
+    ["file_transfer_task", "collection_submission_id", "file_collection_submissions", "id", "N:1"],
+
+    ["file_shares", "user_id", "sys_user", "id", "N:1"],
+    ["file_shares", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_share_items", "share_id", "file_shares", "id", "N:1"],
+    ["file_share_items", "file_id", "file_info", "id", "N:1"],
+    ["file_share_access_record", "share_id", "file_shares", "id", "N:1"],
+    ["file_user_favorites", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_user_favorites", "user_id", "sys_user", "id", "N:1"],
+    ["file_user_favorites", "file_id", "file_info", "id", "N:1"],
+
+    ["file_collections", "user_id", "sys_user", "id", "N:1"],
+    ["file_collections", "workspace_id", "sys_workspace", "id", "N:1"],
+    ["file_collections", "target_folder_id", "file_info", "id", "N:1"],
+    ["file_collections", "storage_platform_setting_id", "storage_settings", "id", "N:1"],
+    ["file_collection_submissions", "collection_id", "file_collections", "id", "N:1"],
+    ["file_collection_submissions", "folder_id", "file_info", "id", "N:1"]
+  ];
+
+  var TABLES = RAW.map(function (t) {
+    return {
+      id: t[0], cn: t[1], group: t[2],
+      cols: t[3].map(function (c) { return { n: c[0], t: c[1], k: c[2] || "" }; })
+    };
+  });
+  var BY_ID = {};
+  TABLES.forEach(function (t) { BY_ID[t.id] = t; });
+
+  /* ---------- 布局 ---------- */
+  var COL_IDS = {
+    A: ["sys_user", "sys_user_transfer_setting", "sys_login_log", "sys_operation_log"],
+    B: ["sys_workspace", "sys_role", "sys_workspace_member"],
+    C: ["sys_workspace_invitation", "sys_permission", "sys_role_permission"],
+    D: ["storage_platform", "file_info"],
+    E: ["storage_settings", "file_transfer_task"],
+    F: ["file_shares", "file_share_items", "file_share_access_record", "file_user_favorites"],
+    G: ["file_collections", "file_collection_submissions"]
+  };
+  var COL_X = { A: 40, B: 350, C: 660, D: 970, E: 1280, F: 1590, G: 1900 };
+  var CARD_W = 250, HEADER_H = 30, ROW_H = 15, PAD_B = 8, START_Y = 90, GAP = 42;
+
+  var geom = {};
+  Object.keys(COL_IDS).forEach(function (key) {
+    var y = START_Y;
+    COL_IDS[key].forEach(function (id) {
+      var h = HEADER_H + BY_ID[id].cols.length * ROW_H + PAD_B;
+      geom[id] = { x: COL_X[key], y: y, w: CARD_W, h: h };
+      y += h + GAP;
+    });
+  });
+
+  var contentBottom = Math.max.apply(null, Object.keys(geom).map(function (id) { return geom[id].y + geom[id].h; }));
+  var canvasW = Math.max.apply(null, Object.keys(geom).map(function (id) { return geom[id].x + geom[id].w; })) + 40;
+  var canvasH = contentBottom + 80;
+
+  var TABLE_COL = {};
+  Object.keys(COL_IDS).forEach(function (key) {
+    COL_IDS[key].forEach(function (id) { TABLE_COL[id] = key.charCodeAt(0) - 65; });
+  });
+
+  var GROUP_IDS = {};
+  TABLES.forEach(function (t) { (GROUP_IDS[t.group] = GROUP_IDS[t.group] || []).push(t.id); });
+
+  function zoneBox(ids) {
+    var gs = ids.map(function (id) { return geom[id]; });
+    var x = Math.min.apply(null, gs.map(function (g) { return g.x; })) - 16;
+    var y = Math.min.apply(null, gs.map(function (g) { return g.y; })) - 24;
+    var r = Math.max.apply(null, gs.map(function (g) { return g.x + g.w; })) + 16;
+    var b = Math.max.apply(null, gs.map(function (g) { return g.y + g.h; })) + 14;
+    return { x: x, y: y, w: r - x, h: b - y };
+  }
+
+  function rowY(id, colName) {
+    var t = BY_ID[id], g = geom[id];
+    var idx = -1;
+    for (var i = 0; i < t.cols.length; i++) { if (t.cols[i].n === colName) { idx = i; break; } }
+    if (idx < 0) return g.y + g.h / 2;
+    return g.y + HEADER_H + 5 + idx * ROW_H + ROW_H / 2;
+  }
+
+  function mid(a, c1, c2, b) {
+    return {
+      x: 0.125 * a.x + 0.375 * c1.x + 0.375 * c2.x + 0.125 * b.x,
+      y: 0.125 * a.y + 0.375 * c1.y + 0.375 * c2.y + 0.125 * b.y
+    };
+  }
+
+  function roundedPath(pts, radius) {
+    var d = "M " + pts[0].x + " " + pts[0].y;
+    for (var i = 1; i < pts.length; i++) {
+      var p = pts[i], prev = pts[i - 1], next = pts[i + 1];
+      if (!next) { d += " L " + p.x + " " + p.y; continue; }
+      var v1x = p.x - prev.x, v1y = p.y - prev.y;
+      var v2x = next.x - p.x, v2y = next.y - p.y;
+      var l1 = Math.sqrt(v1x * v1x + v1y * v1y);
+      var l2 = Math.sqrt(v2x * v2x + v2y * v2y);
+      if (l1 === 0 || l2 === 0) { d += " L " + p.x + " " + p.y; continue; }
+      var rr = Math.min(radius, l1 / 2, l2 / 2);
+      var q1x = p.x - v1x / l1 * rr, q1y = p.y - v1y / l1 * rr;
+      var q2x = p.x + v2x / l2 * rr, q2y = p.y + v2y / l2 * rr;
+      d += " L " + q1x + " " + q1y + " Q " + p.x + " " + p.y + " " + q2x + " " + q2y;
+    }
+    return d;
+  }
+
+  function edgeGeom(rel, idx) {
+    var from = rel[0], col = rel[1], to = rel[2], toCol = rel[3], card = rel[4];
+    var g1 = geom[from], g2 = geom[to];
+    var a, b, c1, c2, m, d, self = false;
+
+    if (from === to) {
+      self = true;
+      var sx = g1.x + g1.w, sy = rowY(from, col), ty = rowY(to, toCol);
+      var bulge = 34 + (idx % 2) * 8;
+      a = { x: sx, y: sy }; b = { x: sx, y: ty };
+      c1 = { x: sx + bulge, y: sy }; c2 = { x: sx + bulge, y: ty };
+      m = mid(a, c1, c2, b);
+      d = "M " + a.x + " " + a.y + " C " + c1.x + " " + c1.y + " " + c2.x + " " + c2.y + " " + b.x + " " + b.y;
+      m.x += 6;
+    } else if (Math.abs(TABLE_COL[from] - TABLE_COL[to]) >= 2) {
+      var ay = rowY(from, col), by = rowY(to, toCol);
+      var dir = (g2.x + g2.w / 2) >= (g1.x + g1.w / 2) ? 1 : -1;
+      var ax = dir > 0 ? (g1.x + g1.w) : g1.x;
+      var bx = dir > 0 ? g2.x : (g2.x + g2.w);
+      var avg = (ay + by) / 2;
+      var lane = (idx % 4) * 10;
+      var useTop = avg < contentBottom * 0.5;
+      var busY = useTop ? (START_Y - 38 - lane) : (contentBottom + 20 + lane);
+      var sx2 = ax + dir * 18, tx2 = bx - dir * 18;
+      a = { x: ax, y: ay }; b = { x: bx, y: by };
+      d = roundedPath([a, { x: sx2, y: ay }, { x: sx2, y: busY }, { x: tx2, y: busY }, { x: tx2, y: by }, b], 12);
+      m = { x: (sx2 + tx2) / 2 + ((idx % 5) - 2) * 14, y: busY - 4 };
+    } else if (Math.abs(g1.x - g2.x) < 1) {
+      var y1 = rowY(from, col), y2 = rowY(to, toCol);
+      if (Math.abs(y1 - y2) > 230) {
+        var lane = (idx % 3) * 9;
+        var toRight = (g1.x !== COL_X.G);
+        var cx = toRight ? (g1.x + g1.w + 26 + lane) : (g1.x - 26 - lane);
+        var px1 = toRight ? (g1.x + g1.w) : g1.x;
+        var px2 = toRight ? (g2.x + g2.w) : g2.x;
+        a = { x: px1, y: y1 }; b = { x: px2, y: y2 };
+        c1 = { x: cx, y: y1 }; c2 = { x: cx, y: y2 };
+        m = mid(a, c1, c2, b);
+        d = "M " + a.x + " " + a.y + " C " + c1.x + " " + c1.y + " " + c2.x + " " + c2.y + " " + b.x + " " + b.y;
+      } else {
+        if (g1.y < g2.y) {
+          a = { x: g1.x + g1.w / 2, y: g1.y + g1.h };
+          b = { x: g2.x + g2.w / 2, y: g2.y };
+        } else {
+          a = { x: g1.x + g1.w / 2, y: g1.y };
+          b = { x: g2.x + g2.w / 2, y: g2.y + g2.h };
+        }
+        var ymid = (a.y + b.y) / 2;
+        c1 = { x: a.x, y: ymid }; c2 = { x: b.x, y: ymid };
+        m = { x: (a.x + b.x) / 2, y: ymid };
+        d = "M " + a.x + " " + a.y + " C " + c1.x + " " + c1.y + " " + c2.x + " " + c2.y + " " + b.x + " " + b.y;
+      }
+    } else {
+      var g1cx = g1.x + g1.w / 2, g2cx = g2.x + g2.w / 2;
+      if (g2cx >= g1cx) {
+        a = { x: g1.x + g1.w, y: rowY(from, col) };
+        b = { x: g2.x, y: rowY(to, toCol) };
+      } else {
+        a = { x: g1.x, y: rowY(from, col) };
+        b = { x: g2.x + g2.w, y: rowY(to, toCol) };
+      }
+      c1 = { x: a.x + (b.x - a.x) * 0.45, y: a.y };
+      c2 = { x: b.x - (b.x - a.x) * 0.45, y: b.y };
+      m = mid(a, c1, c2, b);
+      d = "M " + a.x + " " + a.y + " C " + c1.x + " " + c1.y + " " + c2.x + " " + c2.y + " " + b.x + " " + b.y;
+    }
+    return { d: d, mx: m.x, my: m.y, self: self, card: card, from: from, to: to, col: col, toCol: toCol };
+  }
+
+  /* ---------- 渲染 ---------- */
+  var zonesHTML = "";
+  Object.keys(GROUPS).forEach(function (key) {
+    var G = GROUPS[key], box = zoneBox(GROUP_IDS[key] || []);
+    zonesHTML += '<g class="zone" data-group="' + key + '">' +
+      '<rect x="' + box.x + '" y="' + box.y + '" width="' + box.w + '" height="' + box.h + '" rx="14" ' +
+      'fill="' + G.color + '" fill-opacity="0.035" stroke="' + G.color + '" stroke-opacity="0.22"/>' +
+      '<text class="zone-label" x="' + (box.x + 14) + '" y="' + (box.y + 17) + '" fill="' + G.color + '" fill-opacity="0.85">' + G.label + '</text>' +
+      '</g>';
+  });
+
+  var edgesHTML = "", labelsHTML = "";
+  RELS.forEach(function (rel, i) {
+    var e = edgeGeom(rel, i);
+    edgesHTML += '<path class="edge' + (e.self ? ' self' : '') + '" data-from="' + e.from + '" data-to="' + e.to + '" d="' + e.d + '">' +
+      '<title>' + e.from + '.' + e.col + ' → ' + e.to + '.' + e.toCol + '  (' + e.card + ')</title></path>';
+    labelsHTML += '<text class="lbl" data-from="' + e.from + '" data-to="' + e.to + '" x="' + e.mx + '" y="' + e.my + '" text-anchor="middle">' + e.col + '</text>';
+  });
+
+  var cardsHTML = "";
+  TABLES.forEach(function (t) {
+    var g = geom[t.id], G = GROUPS[t.group], x = g.x, y = g.y, w = g.w;
+    var s = '<g class="card" data-id="' + t.id + '">';
+    s += '<rect class="card-bg" x="' + x + '" y="' + y + '" width="' + w + '" height="' + g.h + '" rx="8" ' +
+         'fill="#141824" stroke="' + G.color + '" stroke-opacity="0.42" stroke-width="1.2"/>';
+    s += '<path d="M ' + x + ' ' + (y + 8) + ' Q ' + x + ' ' + y + ' ' + (x + 8) + ' ' + y +
+         ' H ' + (x + w - 8) + ' Q ' + (x + w) + ' ' + y + ' ' + (x + w) + ' ' + (y + 8) +
+         ' V ' + (y + HEADER_H) + ' H ' + x + ' Z" fill="' + G.head + '"/>';
+    s += '<line x1="' + x + '" y1="' + (y + HEADER_H) + '" x2="' + (x + w) + '" y2="' + (y + HEADER_H) +
+         '" stroke="' + G.color + '" stroke-opacity="0.18"/>';
+    s += '<text class="t-name" x="' + (x + 12) + '" y="' + (y + 19) + '" fill="' + G.light + '">' + t.id + '</text>';
+    s += '<text class="t-cn" x="' + (x + w - 10) + '" y="' + (y + 19) + '" text-anchor="end">' + t.cn + '</text>';
+
+    t.cols.forEach(function (c, i) {
+      var ry = y + HEADER_H + 5 + i * ROW_H;
+      var base = ry + 11;
+      if (i % 2 === 1) {
+        s += '<rect x="' + (x + 1) + '" y="' + ry + '" width="' + (w - 2) + '" height="' + ROW_H +
+             '" fill="#ffffff" fill-opacity="0.012" pointer-events="none"/>';
+      }
+      var k = KEY[c.k], nx = x + 13;
+      if (k) {
+        s += '<text class="key" x="' + (x + 11) + '" y="' + base + '" fill="' + k[1] + '">' + k[0] + '</text>';
+        nx = x + 34;
+      }
+      s += '<text class="col-name" x="' + nx + '" y="' + base + '">' + c.n + '</text>';
+      s += '<text class="col-type" x="' + (x + w - 10) + '" y="' + base + '" text-anchor="end">' + c.t + '</text>';
+    });
+    s += '</g>';
+    cardsHTML += s;
+  });
+
+  var svg = document.getElementById("er");
+  document.getElementById("zones").innerHTML = zonesHTML;
+  document.getElementById("edges").innerHTML = edgesHTML;
+  document.getElementById("cards").innerHTML = cardsHTML;
+  document.getElementById("labels").innerHTML = labelsHTML;
+
+  /* ---------- 视图：缩放 / 平移 ---------- */
+  var vb = { x: -20, y: -10, w: canvasW + 40, h: canvasH + 20 };
+  function setVB() { svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h); }
+  setVB();
+
+  function fit() { vb = { x: -20, y: -10, w: canvasW + 40, h: canvasH + 20 }; setVB(); }
+  function zoomAt(k, mx, my) {
+    if (!mx) { mx = vb.x + vb.w / 2; my = vb.y + vb.h / 2; }
+    vb.w *= k; vb.h *= k;
+    vb.x = mx - (mx - vb.x) * k;
+    vb.y = my - (my - vb.y) * k;
+    setVB();
+  }
+
+  var panning = false, startClient = null, startVB = null, dragMoved = false;
+
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.button !== 0 || ev.target.closest(".card")) return;
+    panning = true; dragMoved = false;
+    startClient = { x: ev.clientX, y: ev.clientY };
+    startVB = { x: vb.x, y: vb.y };
+    svg.classList.add("grabbing");
+    try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+  });
+
+  svg.addEventListener("pointermove", function (ev) {
+    if (!panning) return;
+    var dx = ev.clientX - startClient.x, dy = ev.clientY - startClient.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+    var rect = svg.getBoundingClientRect();
+    vb.x = startVB.x - dx * (vb.w / rect.width);
+    vb.y = startVB.y - dy * (vb.h / rect.height);
+    setVB();
+  });
+
+  function endPan(ev) {
+    if (!panning) return;
+    panning = false;
+    svg.classList.remove("grabbing");
+    try { svg.releasePointerCapture(ev.pointerId); } catch (e) {}
+  }
+  svg.addEventListener("pointerup", endPan);
+  svg.addEventListener("pointercancel", endPan);
+
+  svg.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    var rect = svg.getBoundingClientRect();
+    var mx = vb.x + (ev.clientX - rect.left) / rect.width * vb.w;
+    var my = vb.y + (ev.clientY - rect.top) / rect.height * vb.h;
+    zoomAt(ev.deltaY > 0 ? 1.12 : 1 / 1.12, mx, my);
+  }, { passive: false });
+
+  document.getElementById("fit").addEventListener("click", fit);
+  document.getElementById("zin").addEventListener("click", function () { zoomAt(1 / 1.2); });
+  document.getElementById("zout").addEventListener("click", function () { zoomAt(1.2); });
+
+  /* ---------- 交互：高亮 / 聚焦 ---------- */
+  var hoverId = null, focusId = null;
+  var cardEls = Array.prototype.slice.call(document.querySelectorAll(".card"));
+  var edgeEls = Array.prototype.slice.call(document.querySelectorAll(".edge"));
+  var labelEls = Array.prototype.slice.call(document.querySelectorAll(".lbl"));
+
+  function applyState() {
+    var active = focusId || hoverId;
+    if (!active) {
+      cardEls.forEach(function (c) { c.classList.remove("hot", "rel", "dim"); });
+      edgeEls.forEach(function (e) { e.classList.remove("hot", "cold"); });
+      labelEls.forEach(function (l) { l.classList.remove("show"); });
+      return;
+    }
+    var neighbors = {};
+    neighbors[active] = true;
+    edgeEls.forEach(function (e) {
+      if (e.dataset.from === active || e.dataset.to === active) {
+        neighbors[e.dataset.from] = true;
+        neighbors[e.dataset.to] = true;
+      }
+    });
+    cardEls.forEach(function (c) {
+      var id = c.dataset.id;
+      c.classList.toggle("hot", id === active);
+      c.classList.toggle("rel", id !== active && !!neighbors[id]);
+      c.classList.toggle("dim", !neighbors[id]);
+    });
+    edgeEls.forEach(function (e) {
+      var rel = e.dataset.from === active || e.dataset.to === active;
+      e.classList.toggle("hot", rel);
+      e.classList.toggle("cold", !rel);
+    });
+    labelEls.forEach(function (l) {
+      l.classList.toggle("show", l.dataset.from === active || l.dataset.to === active);
+    });
+  }
+
+  cardEls.forEach(function (c) {
+    var id = c.dataset.id;
+    c.addEventListener("mouseenter", function () {
+      if (focusId) return;
+      hoverId = id; applyState();
+    });
+    c.addEventListener("mouseleave", function () {
+      if (focusId) return;
+      hoverId = null; applyState();
+    });
+    c.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      focusId = (focusId === id) ? null : id;
+      hoverId = null;
+      applyState();
+    });
+  });
+
+  svg.addEventListener("click", function (ev) {
+    if (dragMoved) { dragMoved = false; return; }
+    if (ev.target.closest(".card")) return;
+    focusId = null; hoverId = null; applyState();
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { focusId = null; hoverId = null; applyState(); }
+  });
+
+  /* ---------- 分组筛选 ---------- */
+  var hiddenGroups = {};
+  var chips = document.getElementById("chips");
+  Object.keys(GROUPS).forEach(function (key) {
+    var G = GROUPS[key];
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    chip.dataset.group = key;
+    chip.innerHTML = '<span class="dot" style="background:' + G.color + '"></span>' + G.label;
+    chip.title = "点击显示 / 隐藏";
+    chip.addEventListener("click", function () {
+      hiddenGroups[key] = !hiddenGroups[key];
+      chip.classList.toggle("off", !!hiddenGroups[key]);
+      applyGroupFilter();
+    });
+    chips.appendChild(chip);
+  });
+
+  function applyGroupFilter() {
+    cardEls.forEach(function (c) {
+      c.classList.toggle("group-hidden", !!hiddenGroups[BY_ID[c.dataset.id].group]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".zone"), function (z) {
+      z.classList.toggle("group-hidden", !!hiddenGroups[z.dataset.group]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".edge,.lbl"), function (e) {
+      var fg = BY_ID[e.dataset.from].group;
+      var tg = BY_ID[e.dataset.to].group;
+      e.classList.toggle("group-hidden", !!hiddenGroups[fg] || !!hiddenGroups[tg]);
+    });
+  }
+
+  /* ---------- 搜索 ---------- */
+  document.getElementById("search").addEventListener("input", function (ev) {
+    var q = ev.target.value.trim().toLowerCase();
+    cardEls.forEach(function (c) {
+      var t = BY_ID[c.dataset.id];
+      var hit = !q || t.id.toLowerCase().indexOf(q) >= 0 || t.cn.indexOf(q) >= 0 ||
+        t.cols.some(function (col) { return col.n.toLowerCase().indexOf(q) >= 0; });
+      c.classList.toggle("search-dim", !!q && !hit);
+      c.classList.toggle("search-hit", !!q && hit);
+    });
+  });
+
+  /* ---------- 重置 ---------- */
+  document.getElementById("reset").addEventListener("click", function () {
+    focusId = null; hoverId = null; applyState();
+    document.getElementById("search").value = "";
+    cardEls.forEach(function (c) { c.classList.remove("search-dim", "search-hit"); });
+    hiddenGroups = {};
+    Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) { c.classList.remove("off"); });
+    applyGroupFilter();
+    fit();
+  });
+
+})();
+</script>
+</body>
+</html>
