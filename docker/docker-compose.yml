@@ -1,4 +1,6 @@
-version: '3.8'
+# Usage (from the repository root):
+#   docker compose -f docker/docker-compose.yml up -d --build
+# Relative paths below are resolved from this file's directory.
 
 services:
   # MySQL 数据库
@@ -9,14 +11,22 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: free-fs
+      MYSQL_USER: freefs
+      MYSQL_PASSWORD: freefs
       TZ: Asia/Shanghai
     ports:
       - "3306:3306"
     volumes:
       # 数据持久化，防止容器删了数据库就没了
-      - ./docker/mysql/data:/var/lib/mysql
-      # 关键：自动执行初始化 SQL（根据你的截图路径映射）
-      - ./_sql/mysql/free-fs.sql:/docker-entrypoint-initdb.d/free-fs.sql
+      - ./mysql/data:/var/lib/mysql
+      # 仅在数据卷首次创建时自动执行初始化 SQL
+      - ../_sql/mysql/free-fs.sql:/docker-entrypoint-initdb.d/free-fs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # Redis 缓存
   free-fs-redis:
@@ -26,29 +36,39 @@ services:
     command: redis-server --requirepass 123456
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # free-fs 服务
   free-fs-server:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile
     container_name: free-fs-server
     restart: always
     depends_on:
-      - free-fs-mysql
-      - free-fs-redis
+      free-fs-mysql:
+        condition: service_healthy
+      free-fs-redis:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       # 直接通过服务名连接，内部网络互通
       - SPRING_DATASOURCE_URL=jdbc:mysql://free-fs-mysql:3306/free-fs?useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      - SPRING_DATASOURCE_USERNAME=freefs
+      - SPRING_DATASOURCE_PASSWORD=freefs
       - SPRING_DATA_REDIS_HOST=free-fs-redis
+      - SPRING_DATA_REDIS_PASSWORD=123456
     volumes:
-      - ./logs:/logs
-      - ./tmp:/tmp
-      # 映射你的 D 盘上传目录
-      - D:/insentek/upload:/data/upload
+      - ../logs:/logs
+      - ../tmp:/tmp
+      # 上传目录，可通过 FREE_FS_UPLOAD_DIR 覆盖
+      - ${FREE_FS_UPLOAD_DIR:-./data/upload}:/data/upload
 
 networks:
   default:

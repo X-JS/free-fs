@@ -143,14 +143,17 @@ mvn clean install -DskipTests
 
    ```bash
    # mysql
-   mysql -u root -p < _sql/mysql/free-fs.sql
+   mysql -u root -p -e 'CREATE DATABASE IF NOT EXISTS `free-fs` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci'
+   mysql -u root -p free-fs < _sql/mysql/free-fs.sql
    ```
 
    ```bash
    # postgresql
-    psql -U postgres -c "CREATE DATABASE free-fs;"
-    psql -U postgres -d free-fs -f _sql/postgresql/free-fs_pg.sql
+   psql -U postgres -c "CREATE DATABASE free-fs;"
+   psql -U postgres -d free-fs -f _sql/postgresql/free-fs_pg.sql
    ```
+
+   > 基线脚本会 DROP 并重建所有表，请勿对已有数据的数据库执行。升级时请按文件名顺序执行 `_sql/mysql/migrations/` 或 `_sql/postgresql/migrations/` 下的脚本；工作空间改造之前的版本没有自动升级路径。详见 [`_sql/README.md`](_sql/README.md)。
 
 2. **修改配置文件**
 

@@ -42,3 +42,12 @@ logs/
 .qoder/
 
 .kiro/
+
+### Docker runtime data ###
+docker/mysql/data/
+docker/data/
+
+
+### AI ###
+.playwright-mcp
+graphify-out

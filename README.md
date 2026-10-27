@@ -142,7 +142,8 @@ mvn clean install -DskipTests
 
    ```bash
    # MySQL
-   mysql -u root -p < _sql/mysql/free-fs.sql
+   mysql -u root -p -e 'CREATE DATABASE IF NOT EXISTS `free-fs` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci'
+   mysql -u root -p free-fs < _sql/mysql/free-fs.sql
    ```
 
    ```bash
@@ -150,6 +151,8 @@ mvn clean install -DskipTests
    psql -U postgres -c "CREATE DATABASE free-fs;"
    psql -U postgres -d free-fs -f _sql/postgresql/free-fs_pg.sql
    ```
+
+   > The baseline scripts drop and recreate tables. Do not run them against an existing database that contains data. For upgrades, apply the scripts under `_sql/mysql/migrations/` or `_sql/postgresql/migrations/` in filename order. Versions before the workspace refactor have no automated upgrade path. See [`_sql/README.md`](_sql/README.md) for details.
 
 2. **Modify Configuration**
 

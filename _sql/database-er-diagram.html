@@ -62,6 +62,21 @@
   .key{font-size:8px;font-weight:700;letter-spacing:.3px}
   .col-name{font-size:9px;fill:#c3c9d8}
   .col-type{font-size:8px;fill:#5f677c}
+  .field{cursor:help}
+  .field-hit{transition:fill .12s,fill-opacity .12s}
+  .field:hover .field-hit{fill:#8fb4ff;fill-opacity:.085}
+  .col-name.has-desc{text-decoration:underline dotted;text-decoration-color:#3f4a63;text-underline-offset:2px}
+  .tip{position:fixed;z-index:40;max-width:320px;padding:9px 12px;border:1px solid #2a3347;border-radius:9px;
+       background:rgba(13,16,24,.97);box-shadow:0 10px 28px rgba(0,0,0,.5);backdrop-filter:blur(6px);
+       font-size:11.5px;color:#d8ddeb;opacity:0;transform:translateY(3px);transition:opacity .12s,transform .12s;
+       pointer-events:none}
+  .tip.show{opacity:1;transform:none}
+  .tip .tbl{font-family:Consolas,"SFMono-Regular",monospace;font-size:9.5px;color:#69748c;margin-bottom:4px}
+  .tip .head{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .tip .name{font-weight:600;color:#eef1f8}
+  .tip .type{font-family:Consolas,"SFMono-Regular",monospace;font-size:10px;color:#7f8aa3}
+  .tip .key{font-size:8px;font-weight:700;letter-spacing:.3px}
+  .tip .desc{margin-top:6px;line-height:1.55;color:#aeb7ca;white-space:pre-wrap;word-break:break-word}
   text{user-select:none}
   .overlay{position:absolute;left:16px;bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
            max-width:calc(100% - 32px);padding:8px 13px;border:1px solid #252c3d;border-radius:9px;
@@ -80,7 +95,7 @@
 
 <div class="header">
   <h1>Free-FS 数据库关系结构图</h1>
-  <div class="meta">MySQL / PostgreSQL · 20 张数据表 · 40 条逻辑引用 · 依据 free-fs-new.sql / free-fs_pg.sql</div>
+  <div class="meta">MySQL / PostgreSQL · 20 张数据表 · 40 条逻辑引用 · 依据 free-fs.sql / free-fs_pg.sql · 字段描述取自 MySQL COMMENT</div>
 </div>
 
 <div class="toolbar">
@@ -92,7 +107,7 @@
     <button id="zout" type="button" title="缩小">－</button>
     <button id="reset" type="button">重置</button>
   </div>
-  <div class="hint">滚轮缩放 · 拖拽平移 · 悬停高亮 · 点击表聚焦</div>
+  <div class="hint">滚轮缩放 · 拖拽平移 · 悬停字段查看描述 · 点击表聚焦</div>
 </div>
 
 <div class="stage">
@@ -121,8 +136,11 @@
     <span><i class="line dash"></i>自引用</span>
     <span class="sep"></span>
     <span class="dimnote">DDL 未声明物理外键；旧版订阅相关表已移除</span>
+    <span class="sep"></span>
+    <span class="dimnote">字段名虚线：悬停查看描述</span>
   </div>
 </div>
+<div id="tip" class="tip" role="tooltip" aria-hidden="true"></div>
 
 <script>
 (function () {
@@ -143,120 +161,120 @@
     uq: ["UQ", "#f472b6"]
   };
 
-  /* ---------- 表结构（字段 = [名称, 类型, 键标记]） ---------- */
+  /* ---------- 表结构（字段 = [名称, 类型, 键标记, 描述]） ---------- */
   var RAW = [
     ["sys_user", "用户表", "identity", [
-      ["id", "varchar", "pk"], ["username", "varchar"], ["password", "varchar"], ["email", "varchar"],
-      ["nickname", "varchar"], ["avatar", "varchar"], ["status", "int"], ["created_at", "datetime"],
-      ["updated_at", "datetime"], ["last_login_at", "datetime"]
+      ["id", "varchar", "pk", "用户ID"], ["username", "varchar", "", "用户名"], ["password", "varchar", "", "密码"], ["email", "varchar", "", "邮箱"],
+      ["nickname", "varchar", "", "昵称"], ["avatar", "varchar", "", "头像"], ["status", "int", "", "用户状态 0正常 1禁用"], ["created_at", "datetime", "", "创建时间"],
+      ["updated_at", "datetime", "", "更新时间"], ["last_login_at", "datetime", "", "最后登录时间"]
     ]],
     ["sys_user_transfer_setting", "传输设置", "identity", [
-      ["id", "bigint", "pk"], ["user_id", "varchar", "fk"], ["download_location", "varchar"],
-      ["is_default_download_location", "tinyint"], ["download_speed_limit", "int"],
-      ["concurrent_upload_quantity", "int"], ["concurrent_download_quantity", "int"],
-      ["chunk_size", "bigint"], ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "bigint", "pk", ""], ["user_id", "varchar", "fk", "用户ID"], ["download_location", "varchar", "", "文件下载位置"],
+      ["is_default_download_location", "tinyint", "", "是否默认该路径为下载路径，如果否则每次下载询问保存地址"], ["download_speed_limit", "int", "", "下载速率限制 单位：MB/S"],
+      ["concurrent_upload_quantity", "int", "", "并发上传数量"], ["concurrent_download_quantity", "int", "", "并发下载数量"],
+      ["chunk_size", "bigint", "", "分片大小"], ["created_at", "datetime", "", "创建时间"], ["updated_at", "datetime", "", "修改时间"]
     ]],
     ["sys_login_log", "登录日志", "identity", [
-      ["id", "bigint", "pk"], ["user_id", "varchar", "fk"], ["username", "varchar"], ["login_ip", "varchar"],
-      ["login_address", "varchar"], ["browser", "varchar"], ["os", "varchar"], ["login_type", "varchar"],
-      ["status", "tinyint"], ["msg", "varchar"], ["login_time", "datetime"]
+      ["id", "bigint", "pk", "访问ID"], ["user_id", "varchar", "fk", "用户编号"], ["username", "varchar", "", "用户账号"], ["login_ip", "varchar", "", "登录IP"],
+      ["login_address", "varchar", "", "登录地址"], ["browser", "varchar", "", "浏览器类型"], ["os", "varchar", "", "操作系统"], ["login_type", "varchar", "", "登录方式"],
+      ["status", "tinyint", "", "登录状态（0成功 1失败）"], ["msg", "varchar", "", "提示消息"], ["login_time", "datetime", "", "登录时间"]
     ]],
     ["sys_operation_log", "操作日志", "identity", [
-      ["id", "bigint", "pk"], ["operator_id", "varchar", "fk"], ["operator_name", "varchar"],
-      ["workspace_id", "varchar", "fk"], ["operation_type", "varchar"], ["operation_name", "varchar"],
-      ["target_type", "varchar"], ["target_id", "varchar"], ["target_name", "varchar"], ["detail", "text"],
-      ["operation_ip", "varchar"], ["user_agent", "varchar"], ["status", "tinyint"],
-      ["error_message", "varchar"], ["operation_time", "datetime"]
+      ["id", "bigint", "pk", "主键"], ["operator_id", "varchar", "fk", "操作人ID"], ["operator_name", "varchar", "", "操作人名称"],
+      ["workspace_id", "varchar", "fk", "工作空间ID"], ["operation_type", "varchar", "", "操作类型"], ["operation_name", "varchar", "", "操作名称"],
+      ["target_type", "varchar", "", "目标类型"], ["target_id", "varchar", "", "目标ID"], ["target_name", "varchar", "", "目标名称"], ["detail", "text", "", "操作详情"],
+      ["operation_ip", "varchar", "", "客户端IP"], ["user_agent", "varchar", "", "User-Agent"], ["status", "tinyint", "", "0成功 1失败"],
+      ["error_message", "varchar", "", "失败原因"], ["operation_time", "datetime", "", "操作时间"]
     ]],
 
     ["sys_workspace", "工作空间", "workspace", [
-      ["id", "varchar", "pk"], ["name", "varchar"], ["slug", "varchar", "uq"], ["description", "varchar"],
-      ["owner_id", "varchar", "fk"], ["member_count", "int"], ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "varchar", "pk", "工作空间ID"], ["name", "varchar", "", "工作空间名称"], ["slug", "varchar", "uq", "URL友好的唯一标识"], ["description", "varchar", "", "工作空间描述"],
+      ["owner_id", "varchar", "fk", "创建者/拥有者用户ID"], ["member_count", "int", "", "成员数量（冗余字段，便于列表展示）"], ["created_at", "datetime", "", "创建时间"], ["updated_at", "datetime", "", "更新时间"]
     ]],
     ["sys_role", "角色", "workspace", [
-      ["id", "int", "pk"], ["workspace_id", "varchar", "fk"], ["role_code", "varchar"], ["role_name", "varchar"],
-      ["description", "text"], ["role_type", "tinyint"], ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "int", "pk", "角色ID"], ["workspace_id", "varchar", "fk", "所属工作空间ID"], ["role_code", "varchar", "", "角色编码"], ["role_name", "varchar", "", "角色名称"],
+      ["description", "text", "", "角色描述"], ["role_type", "tinyint", "", "0=系统预设 1=自定义"], ["created_at", "datetime", "", "创建时间"], ["updated_at", "datetime", "", "更新时间"]
     ]],
     ["sys_workspace_member", "空间成员", "workspace", [
-      ["id", "bigint", "pk"], ["workspace_id", "varchar", "fk"], ["user_id", "varchar", "fk"],
-      ["role_id", "int", "fk"], ["joined_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "bigint", "pk", "主键"], ["workspace_id", "varchar", "fk", "工作空间ID"], ["user_id", "varchar", "fk", "用户ID"],
+      ["role_id", "int", "fk", "该成员在此工作空间的角色ID"], ["joined_at", "datetime", "", "加入时间"], ["updated_at", "datetime", "", "更新时间"]
     ]],
     ["sys_workspace_invitation", "空间邀请", "workspace", [
-      ["id", "varchar", "pk"], ["workspace_id", "varchar", "fk"], ["email", "varchar"],
-      ["role_id", "int", "fk"], ["invited_by", "varchar", "fk"], ["token", "varchar", "uq"],
-      ["status", "tinyint"], ["expires_at", "datetime"], ["accepted_at", "datetime"],
-      ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "varchar", "pk", "邀请ID"], ["workspace_id", "varchar", "fk", "工作空间ID"], ["email", "varchar", "", "被邀请人邮箱"],
+      ["role_id", "int", "fk", "分配的角色ID"], ["invited_by", "varchar", "fk", "邀请人用户ID"], ["token", "varchar", "uq", "邀请令牌（用于注册链接）"],
+      ["status", "tinyint", "", "0-待接受 1-已接受 2-已过期 3-已取消"], ["expires_at", "datetime", "", "邀请过期时间"], ["accepted_at", "datetime", "", "接受时间"],
+      ["created_at", "datetime", "", "创建时间"], ["updated_at", "datetime", "", "更新时间"]
     ]],
     ["sys_permission", "权限", "workspace", [
-      ["id", "int", "pk"], ["permission_code", "varchar", "uq"], ["permission_name", "varchar"],
-      ["module", "varchar"], ["description", "varchar"], ["sort", "int"],
-      ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "int", "pk", "权限ID"], ["permission_code", "varchar", "uq", "权限编码，如 file:upload"], ["permission_name", "varchar", "", "权限名称，如 上传文件"],
+      ["module", "varchar", "", "所属模块，如 文件管理"], ["description", "varchar", "", "权限描述"], ["sort", "int", "", "排序"],
+      ["created_at", "datetime", "", ""], ["updated_at", "datetime", "", ""]
     ]],
     ["sys_role_permission", "角色权限关联", "workspace", [
-      ["id", "int", "pk"], ["role_id", "int", "fk"], ["role_code", "varchar"],
-      ["permission_code", "varchar", "fk"]
+      ["id", "int", "pk", "ID"], ["role_id", "int", "fk", "角色ID"], ["role_code", "varchar", "", "角色编码"],
+      ["permission_code", "varchar", "fk", "权限编码"]
     ]],
 
     ["storage_platform", "存储平台", "storage", [
-      ["id", "int", "pk"], ["name", "varchar"], ["identifier", "varchar", "uq"], ["config_scheme", "json"],
-      ["icon", "varchar"], ["link", "varchar"], ["is_default", "tinyint"], ["desc", "varchar"]
+      ["id", "int", "pk", "存储平台"], ["name", "varchar", "", "存储平台名称"], ["identifier", "varchar", "uq", "存储平台标识符"], ["config_scheme", "json", "", "存储平台配置描述schema"],
+      ["icon", "varchar", "", "存储平台图标"], ["link", "varchar", "", "存储平台链接"], ["is_default", "tinyint", "", "是否默认存储平台 0-否 1-是"], ["desc", "varchar", "", "存储平台描述"]
     ]],
     ["storage_settings", "存储配置", "storage", [
-      ["id", "varchar", "pk"], ["platform_identifier", "varchar", "fk"], ["config_data", "json"],
-      ["enabled", "tinyint"], ["workspace_id", "varchar", "fk"], ["created_at", "datetime"],
-      ["updated_at", "datetime"], ["remark", "varchar"], ["deleted", "tinyint"]
+      ["id", "varchar", "pk", "id"], ["platform_identifier", "varchar", "fk", "存储平台标识符"], ["config_data", "json", "", "存储配置"],
+      ["enabled", "tinyint", "", "是否启用 0：否 1：是"], ["workspace_id", "varchar", "fk", "所属工作空间ID"], ["created_at", "datetime", "", "创建时间"],
+      ["updated_at", "datetime", "", "更新时间"], ["remark", "varchar", "", "备注"], ["deleted", "tinyint", "", "逻辑删除 0未删除 1已删除"]
     ]],
     ["file_info", "文件资源", "storage", [
-      ["id", "varchar", "pk"], ["object_key", "varchar"], ["original_name", "varchar"],
-      ["display_name", "varchar"], ["suffix", "varchar"], ["size", "bigint"], ["mime_type", "varchar"],
-      ["is_dir", "tinyint"], ["parent_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
-      ["user_id", "varchar", "fk"], ["content_md5", "varchar"], ["storage_platform_setting_id", "varchar", "fk"],
-      ["upload_time", "datetime"], ["update_time", "datetime"], ["last_access_time", "datetime"],
-      ["is_deleted", "tinyint"], ["deleted_time", "datetime"]
+      ["id", "varchar", "pk", ""], ["object_key", "varchar", "", "资源名称"], ["original_name", "varchar", "", "资源原始名称"],
+      ["display_name", "varchar", "", "资源别名"], ["suffix", "varchar", "", "后缀名"], ["size", "bigint", "", "大小"], ["mime_type", "varchar", "", "存储标准MIME类型"],
+      ["is_dir", "tinyint", "", "是否目录"], ["parent_id", "varchar", "fk", "父节点ID"], ["workspace_id", "varchar", "fk", "所属工作空间ID"],
+      ["user_id", "varchar", "fk", "用户id"], ["content_md5", "varchar", "", "用于秒传和文件校验"], ["storage_platform_setting_id", "varchar", "fk", "存储平台标识符"],
+      ["upload_time", "datetime", "", "上传时间"], ["update_time", "datetime", "", "修改时间"], ["last_access_time", "datetime", "", "最后访问时间"],
+      ["is_deleted", "tinyint", "", "软删除标记，回收站标识0：未删除 1：已删除"], ["deleted_time", "datetime", "", "删除时间"]
     ]],
     ["file_transfer_task", "传输任务", "storage", [
-      ["id", "bigint", "pk"], ["task_id", "varchar", "uq"], ["upload_id", "varchar"],
-      ["parent_id", "varchar"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
-      ["collection_id", "varchar", "fk"], ["collection_submission_id", "varchar", "fk"],
-      ["storage_platform_setting_id", "varchar", "fk"], ["object_key", "varchar"],
-      ["file_id", "varchar", "fk"], ["file_name", "varchar"], ["file_size", "bigint"], ["file_md5", "varchar"],
-      ["suffix", "varchar"], ["mime_type", "varchar"], ["total_chunks", "int"], ["task_type", "varchar"],
-      ["uploaded_chunks", "int"], ["chunk_size", "bigint"], ["uploaded_size", "bigint"],
-      ["status", "varchar"], ["error_msg", "varchar"], ["start_time", "datetime"], ["complete_time", "datetime"],
-      ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "bigint", "pk", "主键ID"], ["task_id", "varchar", "uq", "任务ID(UUID)"], ["upload_id", "varchar", "", "上传唯一ID"],
+      ["parent_id", "varchar", "", "父ID"], ["user_id", "varchar", "fk", "用户ID"], ["workspace_id", "varchar", "fk", "所属工作空间ID"],
+      ["collection_id", "varchar", "fk", "文件收集ID（普通上传为空）"], ["collection_submission_id", "varchar", "fk", "文件收集提交记录ID（普通上传为空）"],
+      ["storage_platform_setting_id", "varchar", "fk", "存储平台配置ID"], ["object_key", "varchar", "", "对象key"],
+      ["file_id", "varchar", "fk", "下载时关联的文件ID"], ["file_name", "varchar", "", "文件名"], ["file_size", "bigint", "", "文件大小(字节)"], ["file_md5", "varchar", "", "文件MD5值"],
+      ["suffix", "varchar", "", "文件类型(扩展名)"], ["mime_type", "varchar", "", "存储标准MIME类型"], ["total_chunks", "int", "", "总分片数"], ["task_type", "varchar", "", "任务类型"],
+      ["uploaded_chunks", "int", "", "已上传分片数"], ["chunk_size", "bigint", "", "分片大小(默认5MB)"], ["uploaded_size", "bigint", "", "已上传大小(字节)"],
+      ["status", "varchar", "", "状态"], ["error_msg", "varchar", "", "错误信息"], ["start_time", "datetime", "", "开始时间"], ["complete_time", "datetime", "", "完成时间"],
+      ["created_at", "datetime", "", "创建时间"], ["updated_at", "datetime", "", "更新时间"]
     ]],
 
     ["file_shares", "文件分享", "sharing", [
-      ["id", "varchar", "pk"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
-      ["share_name", "varchar"], ["share_code", "varchar"], ["expire_time", "datetime"], ["scope", "varchar"],
-      ["view_count", "int"], ["max_view_count", "int"], ["download_count", "int"],
-      ["max_download_count", "int"], ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "varchar", "pk", "分享ID"], ["user_id", "varchar", "fk", "分享人ID"], ["workspace_id", "varchar", "fk", "所属工作空间ID"],
+      ["share_name", "varchar", "", "分享名称"], ["share_code", "varchar", "", "提取码（可为空）"], ["expire_time", "datetime", "", "过期时间（null表示永久有效）"], ["scope", "varchar", "", "权限范围: preview,download  (逗号分隔)"],
+      ["view_count", "int", "", "查看次数统计"], ["max_view_count", "int", "", "最大查看次数（NULL表示无限制）"], ["download_count", "int", "", "下载次数统计"],
+      ["max_download_count", "int", "", "最大下载次数（NULL表示无限制）"], ["created_at", "datetime", "", ""], ["updated_at", "datetime", "", ""]
     ]],
     ["file_share_items", "分享文件关联", "sharing", [
-      ["share_id", "varchar", "pf"], ["file_id", "varchar", "pf"], ["created_at", "datetime"]
+      ["share_id", "varchar", "pf", "分享ID"], ["file_id", "varchar", "pf", "文件/文件夹ID"], ["created_at", "datetime", "", "创建时间"]
     ]],
     ["file_share_access_record", "分享访问记录", "sharing", [
-      ["id", "bigint", "pk"], ["share_id", "varchar", "fk"], ["access_ip", "varchar"],
-      ["access_address", "varchar"], ["browser", "varchar"], ["os", "varchar"], ["access_time", "datetime"]
+      ["id", "bigint", "pk", "自增ID"], ["share_id", "varchar", "fk", "分享ID"], ["access_ip", "varchar", "", "访问IP"],
+      ["access_address", "varchar", "", "访问地址"], ["browser", "varchar", "", "浏览器类型"], ["os", "varchar", "", "操作系统"], ["access_time", "datetime", "", "访问时间"]
     ]],
     ["file_user_favorites", "文件收藏", "sharing", [
-      ["workspace_id", "varchar", "pf"], ["user_id", "varchar", "pf"], ["file_id", "varchar", "pf"],
-      ["favorite_time", "datetime"]
+      ["workspace_id", "varchar", "pf", "所属工作空间ID"], ["user_id", "varchar", "pf", "用户ID"], ["file_id", "varchar", "pf", "文件ID"],
+      ["favorite_time", "datetime", "", "收藏时间"]
     ]],
 
     ["file_collections", "文件收集", "collection", [
-      ["id", "varchar", "pk"], ["user_id", "varchar", "fk"], ["workspace_id", "varchar", "fk"],
-      ["target_folder_id", "varchar", "fk"], ["storage_platform_setting_id", "varchar", "fk"],
-      ["collection_name", "varchar"], ["description", "varchar"], ["access_code_hash", "varchar"],
-      ["expire_time", "datetime"], ["max_file_size", "bigint"], ["allowed_extensions", "varchar"],
-      ["status", "varchar"], ["submission_count", "int"], ["file_count", "int"], ["total_size", "bigint"],
-      ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "varchar", "pk", "收集ID"], ["user_id", "varchar", "fk", "创建人ID"], ["workspace_id", "varchar", "fk", "所属工作空间ID"],
+      ["target_folder_id", "varchar", "fk", "收集目标文件夹ID"], ["storage_platform_setting_id", "varchar", "fk", "存储平台配置ID，空表示本地存储"],
+      ["collection_name", "varchar", "", "收集名称"], ["description", "varchar", "", "收集说明"], ["access_code_hash", "varchar", "", "访问码哈希"],
+      ["expire_time", "datetime", "", "截止时间，空表示永久"], ["max_file_size", "bigint", "", "单文件大小限制（字节）"], ["allowed_extensions", "varchar", "", "允许扩展名，逗号分隔"],
+      ["status", "varchar", "", "OPEN/CLOSED"], ["submission_count", "int", "", "提交会话数"], ["file_count", "int", "", "成功上传文件数"], ["total_size", "bigint", "", "成功上传总字节数"],
+      ["created_at", "datetime", "", ""], ["updated_at", "datetime", "", ""]
     ]],
     ["file_collection_submissions", "收集提交记录", "collection", [
-      ["id", "varchar", "pk"], ["collection_id", "varchar", "fk"], ["submitter_name", "varchar"],
-      ["submitter_ip", "varchar"], ["user_agent", "varchar"], ["folder_id", "varchar", "fk"],
-      ["upload_token_hash", "varchar"], ["file_count", "int"], ["total_size", "bigint"],
-      ["status", "varchar"], ["completed_at", "datetime"], ["created_at", "datetime"], ["updated_at", "datetime"]
+      ["id", "varchar", "pk", "提交记录ID"], ["collection_id", "varchar", "fk", "收集ID"], ["submitter_name", "varchar", "", "提交人姓名"],
+      ["submitter_ip", "varchar", "", "提交人IP"], ["user_agent", "varchar", "", "User-Agent"], ["folder_id", "varchar", "fk", "自动创建的提交文件夹ID"],
+      ["upload_token_hash", "varchar", "", "一次性上传令牌SHA-256"], ["file_count", "int", "", "成功上传文件数"], ["total_size", "bigint", "", "成功上传总字节数"],
+      ["status", "varchar", "", "UPLOADING/COMPLETED"], ["completed_at", "datetime", "", "完成提交时间"], ["created_at", "datetime", "", ""], ["updated_at", "datetime", "", ""]
     ]]
   ];
 
@@ -310,7 +328,7 @@
   var TABLES = RAW.map(function (t) {
     return {
       id: t[0], cn: t[1], group: t[2],
-      cols: t[3].map(function (c) { return { n: c[0], t: c[1], k: c[2] || "" }; })
+      cols: t[3].map(function (c) { return { n: c[0], t: c[1], k: c[2] || "", d: c[3] || "" }; })
     };
   });
   var BY_ID = {};
@@ -498,6 +516,9 @@
     t.cols.forEach(function (c, i) {
       var ry = y + HEADER_H + 5 + i * ROW_H;
       var base = ry + 11;
+      s += '<g class="field" data-table="' + t.id + '" data-idx="' + i + '">';
+      s += '<rect class="field-hit" x="' + x + '" y="' + ry + '" width="' + w + '" height="' + ROW_H +
+           '" fill="transparent" pointer-events="all"/>';
       if (i % 2 === 1) {
         s += '<rect x="' + (x + 1) + '" y="' + ry + '" width="' + (w - 2) + '" height="' + ROW_H +
              '" fill="#ffffff" fill-opacity="0.012" pointer-events="none"/>';
@@ -507,8 +528,9 @@
         s += '<text class="key" x="' + (x + 11) + '" y="' + base + '" fill="' + k[1] + '">' + k[0] + '</text>';
         nx = x + 34;
       }
-      s += '<text class="col-name" x="' + nx + '" y="' + base + '">' + c.n + '</text>';
+      s += '<text class="col-name' + (c.d ? ' has-desc' : '') + '" x="' + nx + '" y="' + base + '">' + c.n + '</text>';
       s += '<text class="col-type" x="' + (x + w - 10) + '" y="' + base + '" text-anchor="end">' + c.t + '</text>';
+      s += '</g>';
     });
     s += '</g>';
     cardsHTML += s;
@@ -537,6 +559,7 @@
   var panning = false, startClient = null, startVB = null, dragMoved = false;
 
   svg.addEventListener("pointerdown", function (ev) {
+    hideTip();
     if (ev.button !== 0 || ev.target.closest(".card")) return;
     panning = true; dragMoved = false;
     startClient = { x: ev.clientX, y: ev.clientY };
@@ -566,6 +589,7 @@
 
   svg.addEventListener("wheel", function (ev) {
     ev.preventDefault();
+    hideTip();
     var rect = svg.getBoundingClientRect();
     var mx = vb.x + (ev.clientX - rect.left) / rect.width * vb.w;
     var my = vb.y + (ev.clientY - rect.top) / rect.height * vb.h;
@@ -581,6 +605,68 @@
   var cardEls = Array.prototype.slice.call(document.querySelectorAll(".card"));
   var edgeEls = Array.prototype.slice.call(document.querySelectorAll(".edge"));
   var labelEls = Array.prototype.slice.call(document.querySelectorAll(".lbl"));
+
+  var tipEl = document.getElementById("tip");
+  var fieldEls = Array.prototype.slice.call(document.querySelectorAll(".field"));
+
+  function moveTip(ev) {
+    if (!tipEl.classList.contains("show")) return;
+    var pad = 12, tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+    var left = ev.clientX + 14, top = ev.clientY + 14;
+    if (left + tw > window.innerWidth - pad) left = ev.clientX - tw - 14;
+    if (top + th > window.innerHeight - pad) top = ev.clientY - th - 14;
+    tipEl.style.left = Math.max(pad, left) + "px";
+    tipEl.style.top = Math.max(pad, top) + "px";
+  }
+
+  function showFieldTip(fieldEl, ev) {
+    var t = BY_ID[fieldEl.dataset.table], c = t && t.cols[+fieldEl.dataset.idx];
+    if (!c) return;
+    tipEl.textContent = "";
+    var tbl = document.createElement("div");
+    tbl.className = "tbl";
+    tbl.textContent = t.id + " · " + t.cn;
+    var head = document.createElement("div");
+    head.className = "head";
+    var name = document.createElement("span");
+    name.className = "name";
+    name.textContent = c.n;
+    var type = document.createElement("span");
+    type.className = "type";
+    type.textContent = c.t;
+    head.appendChild(name);
+    head.appendChild(type);
+    var k = KEY[c.k];
+    if (k) {
+      var key = document.createElement("span");
+      key.className = "key";
+      key.style.color = k[1];
+      key.textContent = k[0];
+      head.appendChild(key);
+    }
+    tipEl.appendChild(tbl);
+    tipEl.appendChild(head);
+    if (c.d) {
+      var desc = document.createElement("div");
+      desc.className = "desc";
+      desc.textContent = c.d;
+      tipEl.appendChild(desc);
+    }
+    tipEl.classList.add("show");
+    tipEl.setAttribute("aria-hidden", "false");
+    moveTip(ev);
+  }
+
+  function hideTip() {
+    tipEl.classList.remove("show");
+    tipEl.setAttribute("aria-hidden", "true");
+  }
+
+  fieldEls.forEach(function (f) {
+    f.addEventListener("mouseenter", function (ev) { showFieldTip(f, ev); });
+    f.addEventListener("mousemove", moveTip);
+    f.addEventListener("mouseleave", hideTip);
+  });
 
   function applyState() {
     var active = focusId || hoverId;
@@ -639,7 +725,7 @@
   });
 
   document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") { focusId = null; hoverId = null; applyState(); }
+    if (ev.key === "Escape") { focusId = null; hoverId = null; hideTip(); applyState(); }
   });
 
   /* ---------- 分组筛选 ---------- */
@@ -653,6 +739,7 @@
     chip.innerHTML = '<span class="dot" style="background:' + G.color + '"></span>' + G.label;
     chip.title = "点击显示 / 隐藏";
     chip.addEventListener("click", function () {
+      hideTip();
       hiddenGroups[key] = !hiddenGroups[key];
       chip.classList.toggle("off", !!hiddenGroups[key]);
       applyGroupFilter();
@@ -677,10 +764,14 @@
   /* ---------- 搜索 ---------- */
   document.getElementById("search").addEventListener("input", function (ev) {
     var q = ev.target.value.trim().toLowerCase();
+    hideTip();
     cardEls.forEach(function (c) {
       var t = BY_ID[c.dataset.id];
       var hit = !q || t.id.toLowerCase().indexOf(q) >= 0 || t.cn.indexOf(q) >= 0 ||
-        t.cols.some(function (col) { return col.n.toLowerCase().indexOf(q) >= 0; });
+        t.cols.some(function (col) {
+          return col.n.toLowerCase().indexOf(q) >= 0 ||
+            (col.d && col.d.toLowerCase().indexOf(q) >= 0);
+        });
       c.classList.toggle("search-dim", !!q && !hit);
       c.classList.toggle("search-hit", !!q && hit);
     });
@@ -688,7 +779,7 @@
 
   /* ---------- 重置 ---------- */
   document.getElementById("reset").addEventListener("click", function () {
-    focusId = null; hoverId = null; applyState();
+    focusId = null; hoverId = null; hideTip(); applyState();
     document.getElementById("search").value = "";
     cardEls.forEach(function (c) { c.classList.remove("search-dim", "search-hit"); });
     hiddenGroups = {};
