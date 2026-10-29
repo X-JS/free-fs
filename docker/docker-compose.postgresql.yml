@@ -1,0 +1,90 @@
+# PostgreSQL 版本，与 docker-compose.yml（MySQL 版）二选一使用。
+# Usage (from the repository root):
+#   docker compose -f docker/docker-compose.postgresql.yml up -d --build
+# 两套配置共用容器名和宿主机端口（8080、6379），同一时间只能运行一套；
+# 切换前先停掉另一套：docker compose -f docker/docker-compose.yml down
+# Relative paths below are resolved from this file's directory.
+
+services:
+  # PostgreSQL 数据库
+  free-fs-postgresql:
+    image: postgres:16.5
+    container_name: free-fs-postgresql
+    restart: always
+    environment:
+      POSTGRES_DB: free-fs
+      POSTGRES_USER: freefs
+      POSTGRES_PASSWORD: freefs
+      TZ: Asia/Shanghai
+      # 统一 UTF-8 编码；C.UTF-8 保证中文按 Unicode 码点稳定排序
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    # 让数据库会话时区与应用（GMT+8）保持一致
+    command:
+      - postgres
+      - -c
+      - timezone=Asia/Shanghai
+      - -c
+      - log_timezone=Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      # 数据持久化，防止容器删了数据库就没了
+      - ./postgresql/data:/var/lib/postgresql/data
+      # 仅在数据目录首次初始化时自动执行 baseline 脚本（脚本内含 DROP TABLE，勿对已有数据的库执行）
+      - ../_sql/postgresql/free-fs_pg.sql:/docker-entrypoint-initdb.d/free-fs.sql:ro
+    healthcheck:
+      # 走 TCP 探测，避免初始化阶段的临时实例（仅监听 socket）被误判为就绪
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Redis 缓存
+  free-fs-redis:
+    image: redis:7.0
+    container_name: free-fs-redis
+    restart: always
+    command: redis-server --requirepass 123456
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # free-fs 服务
+  free-fs-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: free-fs-server
+    restart: always
+    depends_on:
+      free-fs-postgresql:
+        condition: service_healthy
+      free-fs-redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      # 直接通过服务名连接，内部网络互通
+      # stringtype=unspecified：让 String 参数按 unspecified 发送，避免 json 列（config_scheme / config_data）写入时报类型错误
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://free-fs-postgresql:5432/free-fs?ApplicationName=free-fs&reWriteBatchedInserts=true&stringtype=unspecified
+      - SPRING_DATASOURCE_USERNAME=freefs
+      - SPRING_DATASOURCE_PASSWORD=freefs
+      # application-docker.yml 中固定写的是 MySQL 驱动，这里显式覆盖为 PostgreSQL
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATA_REDIS_HOST=free-fs-redis
+      - SPRING_DATA_REDIS_PASSWORD=123456
+    volumes:
+      - ../logs:/logs
+      - ../tmp:/tmp
+      # 上传目录，可通过 FREE_FS_UPLOAD_DIR 覆盖
+      - ${FREE_FS_UPLOAD_DIR:-./data/upload}:/data/upload
+
+networks:
+  default:
+    name: free-fs-net

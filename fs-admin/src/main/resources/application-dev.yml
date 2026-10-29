@@ -1,15 +1,19 @@
 spring:
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
-    url: jdbc:mysql://127.0.0.1:3306/free-fs?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true
-    username: root
-    password: root
-    driver-class-name: com.mysql.cj.jdbc.Driver
+#    url: jdbc:mysql://127.0.0.1:3306/free-fs?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true
+#    username: root
+#    password: root
+#    driver-class-name: com.mysql.cj.jdbc.Driver
     # postgresql数据库配置
-#    url: jdbc:postgresql://127.0.0.1:5432/free-fs?useUnicode=true&characterEncoding=utf8&useSSL=true&autoReconnect=true&reWriteBatchedInserts=true
-#    username: postgres
-#    password: postgres
-#    driver-class-name: org.postgresql.Driver
+    # stringtype=unspecified：storage_platform.config_scheme、storage_settings.config_data 是 json 列，
+    # 实体里对应字段是 String，驱动默认按 varchar 发送，PostgreSQL 不会隐式转成 json，
+    # 会报 "column ... is of type json but expression is of type character varying"。
+    # 该参数让参数按 unspecified 发送，由服务端按目标列类型推断。MySQL 驱动不需要也不认识它。
+    url: jdbc:postgresql://192.168.211.175:5432/free-fs?reWriteBatchedInserts=true&stringtype=unspecified
+    username: freefs
+    password: freefs
+    driver-class-name: org.postgresql.Driver
     # 数据源配置
     hikari:
       # 最大连接池数量
@@ -30,7 +34,7 @@ spring:
       keepaliveTime: 30000
   data:
     redis:
-      host: 127.0.0.1
+      host: 192.168.211.175
       port: 6379
       password: 123456
       database: 0
@@ -88,7 +92,7 @@ fs:
   # 本地存储配置（默认）
   storage:
     local:
-      base-path: D:/insentek/upload
+      base-path: E:/opensource/free-fs/upload
       base-url: http://localhost:8080/files
 
 mybatis-flex:

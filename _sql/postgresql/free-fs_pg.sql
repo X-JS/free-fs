@@ -17,7 +17,7 @@ CREATE TABLE "file_info" (
                              "suffix" varchar(20) DEFAULT NULL,
                              "size" bigint DEFAULT NULL,
                              "mime_type" varchar(128) DEFAULT NULL,
-                             "is_dir" smallint NOT NULL,
+                             "is_dir" boolean NOT NULL,
                              "parent_id" varchar(128) DEFAULT NULL,
                              "workspace_id" varchar(128) NOT NULL,
                              "user_id" varchar(128) NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE "file_info" (
                              "upload_time" timestamp NOT NULL,
                              "update_time" timestamp DEFAULT NULL,
                              "last_access_time" timestamp DEFAULT NULL,
-                             "is_deleted" smallint DEFAULT NULL,
+                             "is_deleted" boolean DEFAULT NULL,
                              "deleted_time" timestamp DEFAULT NULL,
                              PRIMARY KEY ("id")
 );
