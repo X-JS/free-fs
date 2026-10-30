@@ -10,7 +10,7 @@ spring:
     # 实体里对应字段是 String，驱动默认按 varchar 发送，PostgreSQL 不会隐式转成 json，
     # 会报 "column ... is of type json but expression is of type character varying"。
     # 该参数让参数按 unspecified 发送，由服务端按目标列类型推断。MySQL 驱动不需要也不认识它。
-    url: jdbc:postgresql://192.168.211.175:5432/free-fs?reWriteBatchedInserts=true&stringtype=unspecified
+    url: jdbc:postgresql://192.168.211.6:5432/free-fs?reWriteBatchedInserts=true&stringtype=unspecified
     username: freefs
     password: freefs
     driver-class-name: org.postgresql.Driver
@@ -34,7 +34,7 @@ spring:
       keepaliveTime: 30000
   data:
     redis:
-      host: 192.168.211.175
+      host: 192.168.211.6
       port: 6379
       password: 123456
       database: 0

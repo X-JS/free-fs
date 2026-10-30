@@ -1,6 +1,7 @@
 package com.xddcodec.fs.framework.preview.converter.impl;
 
 import com.xddcodec.fs.framework.preview.converter.IConverter;
+import com.xddcodec.fs.framework.preview.office.LibreOfficePathResolver;
 import com.xddcodec.fs.framework.preview.office.OfficeToPdfConfig;
 import com.xddcodec.fs.framework.preview.queue.OfficeTaskQueueHandler;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,11 @@ public class OfficeToPdfConverter implements IConverter {
     private final OfficeToPdfConfig config;
     private final OfficeTaskQueueHandler queueHandler;
 
+    /**
+     * 解析后的 soffice 可执行文件路径（懒加载缓存）。
+     */
+    private volatile String sofficeExecutable;
+
     @Override
     public String getTargetExtension() {
         return "pdf";
@@ -46,11 +52,13 @@ public class OfficeToPdfConverter implements IConverter {
         Path tempInputFile = null;
         Path tempOutputFile = null;
         Path userProfileDir = null;
+        Path tempLogFile = null;
 
         try {
             String baseName = UUID.randomUUID().toString();
             tempInputFile = createTempFile(baseName, sourceExtension);
             tempOutputFile = createTempFile(baseName, "pdf");
+            tempLogFile = createTempFile(baseName, "log");
             userProfileDir = Path.of(config.getCachePath(), baseName + "-profile");
             Files.createDirectories(userProfileDir);
 
@@ -74,8 +82,9 @@ public class OfficeToPdfConverter implements IConverter {
                     "--outdir", tempOutputFile.getParent().toString(),
                     tempInputFile.toString()
             ));
-            processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-            processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+            // 输出写入临时日志文件：转换失败时把 LibreOffice 的真实报错带出来，避免只看到一句「转换失败」
+            processBuilder.redirectErrorStream(true);
+            processBuilder.redirectOutput(tempLogFile.toFile());
 
             Process process = processBuilder.start();
             long timeoutMs = config.getTaskExecutionTimeout() != null
@@ -84,10 +93,11 @@ public class OfficeToPdfConverter implements IConverter {
             if (!process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
                 process.waitFor(5, TimeUnit.SECONDS);
-                throw new RuntimeException("LibreOffice 命令行转换超时");
+                throw new RuntimeException("LibreOffice 命令行转换超时（" + timeoutMs + " ms）" + readLogHint(tempLogFile));
             }
             if (process.exitValue() != 0 || !Files.isRegularFile(tempOutputFile)) {
-                throw new RuntimeException("LibreOffice 命令行转换失败，退出码: " + process.exitValue());
+                throw new RuntimeException("LibreOffice 命令行转换失败，退出码: "
+                        + process.exitValue() + readLogHint(tempLogFile));
             }
 
             // 读取结果
@@ -104,17 +114,64 @@ public class OfficeToPdfConverter implements IConverter {
             Thread.currentThread().interrupt();
             throw new RuntimeException("文件转换被中断", e);
         } finally {
-            cleanupTempFiles(tempInputFile, tempOutputFile);
+            cleanupTempFiles(tempInputFile, tempOutputFile, tempLogFile);
             cleanupDirectory(userProfileDir);
         }
     }
 
+    /**
+     * 读取 LibreOffice 命令输出，作为异常信息的补充说明。
+     */
+    private String readLogHint(Path logFile) {
+        if (logFile == null) {
+            return "";
+        }
+        try {
+            if (!Files.isRegularFile(logFile)) {
+                return "";
+            }
+            String output = Files.readString(logFile).trim();
+            if (output.isEmpty()) {
+                return "";
+            }
+            return "；LibreOffice 输出: " + output.substring(0, Math.min(output.length(), 500));
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    /**
+     * 解析 soffice 可执行文件。
+     *
+     * <p>必须与启动阶段 {@link LibreOfficePathResolver} 使用同一套解析规则：
+     * {@code fs.preview.office.office-home} 未配置时 {@code config.getOfficeHome()} 为 {@code null}，
+     * 直接 {@code Path.of(null)} 会抛 NullPointerException，导致所有 Word/Excel/PPT 转换失败
+     * （启动日志却显示 LibreOffice 启动成功，问题因此被掩盖）。</p>
+     */
     private String resolveSofficeExecutable() {
-        Path officeHome = Path.of(config.getOfficeHome());
+        String cached = sofficeExecutable;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (sofficeExecutable == null) {
+                sofficeExecutable = doResolveSofficeExecutable();
+            }
+            return sofficeExecutable;
+        }
+    }
+
+    private String doResolveSofficeExecutable() {
+        String officeHome = LibreOfficePathResolver.resolveOfficeHome(config.getOfficeHome());
+        if (!LibreOfficePathResolver.validateOfficeHome(officeHome)) {
+            throw new IllegalStateException("LibreOffice 路径无效，无法转换 Office 文档: " + officeHome
+                    + "，请安装 LibreOffice 或配置 fs.preview.office.office-home");
+        }
+        Path home = Path.of(officeHome);
         List<Path> candidates = List.of(
-                officeHome.resolve("program/soffice.exe"),
-                officeHome.resolve("program/soffice"),
-                officeHome.resolve("MacOS/soffice")
+                home.resolve("program/soffice.exe"),
+                home.resolve("program/soffice"),
+                home.resolve("MacOS/soffice")
         );
         return candidates.stream()
                 .filter(Files::isRegularFile)

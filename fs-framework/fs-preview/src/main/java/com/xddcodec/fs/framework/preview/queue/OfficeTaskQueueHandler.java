@@ -78,9 +78,17 @@ public class OfficeTaskQueueHandler {
         } catch (TimeoutException e) {
             log.error("Office 转 PDF 等待超时（{} ms）", waitMs, e);
             throw new RuntimeException("文件预览生成超时或异常");
-        } catch (Exception e) {
-            log.error("队列任务执行失败", e);
-            throw new RuntimeException("文件预览生成超时或异常");
+        } catch (ExecutionException e) {
+            // 保留转换器的真实失败原因，便于前端/日志定位（历史上这里被统一成一句笼统的提示）
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            log.error("Office 转 PDF 失败: {}", cause.getMessage(), cause);
+            String message = cause.getMessage() != null && !cause.getMessage().isBlank()
+                    ? cause.getMessage()
+                    : "文件预览生成失败";
+            throw new RuntimeException(message, cause);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("文件预览生成被中断", e);
         }
     }
 

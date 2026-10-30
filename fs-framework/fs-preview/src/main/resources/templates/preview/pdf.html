@@ -167,7 +167,16 @@
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                const raw = await response.text().catch(() => '');
+                throw new Error(`HTTP error! status: ${response.status}${raw ? ' - ' + raw.slice(0, 300) : ''}`);
+            }
+
+            // 后端异常时可能以 200 + JSON 返回（例如全局异常处理），这类响应不能当作 PDF 交给 pdf.js，
+            // 否则只会看到一句「加载失败」而拿不到真实原因。
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (!contentType.includes('pdf')) {
+                const raw = await response.text().catch(() => '');
+                throw new Error(`返回内容不是 PDF（${contentType || 'unknown'}）${raw ? ' - ' + raw.slice(0, 300) : ''}`);
             }
 
             // 获取 Blob 数据

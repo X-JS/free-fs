@@ -79,12 +79,31 @@ public class FileStreamController {
     private ResponseEntity<StreamingResponseBody> handleFullRequest(
             IStorageOperationService storage, FileInfo fileInfo, PreviewStrategy strategy) {
 
+        // 转换类策略（Office → PDF 等）必须在这里同步完成：
+        // 如果放进 StreamingResponseBody，异常发生时 200 响应头已经发出，前端只会拿到被截断的空响应体，
+        // 表现为「预览加载失败」且看不到任何原因。提前转换失败时返回 500 并带上真实原因。
+        InputStream openedStream = null;
+        InputStream convertedStream = null;
+        try {
+            openedStream = storage.getFileStream(fileInfo.getObjectKey());
+            convertedStream = strategy.processStream(openedStream, fileInfo.getSuffix());
+        } catch (Exception e) {
+            closeQuietly(openedStream);
+            log.error("预览生成失败: fileName={}, fileType={}", fileInfo.getDisplayName(),
+                    strategy.getClass().getSimpleName(), e);
+            return previewFailureResponse(e);
+        }
+
+        if (convertedStream == null) {
+            closeQuietly(openedStream);
+            return previewFailureResponse(new IllegalStateException("预览转换未返回数据"));
+        }
+
+        final InputStream sourceStream = openedStream;
+        final InputStream processedStream = convertedStream;
         StreamingResponseBody stream = outputStream -> {
-            try (InputStream sourceStream = storage.getFileStream(fileInfo.getObjectKey());
-                 InputStream processedStream = strategy.processStream(sourceStream, fileInfo.getSuffix())) {
-
+            try (sourceStream; processedStream) {
                 copyStream(processedStream, outputStream);
-
             } catch (IOException e) {
                 log.debug("文件流传输中断: {}", fileInfo.getDisplayName());
             }
@@ -93,6 +112,30 @@ public class FileStreamController {
         // 传入 fileInfo.getSize() 仅作为参考，buildHeaders 内部决定是否使用
         HttpHeaders headers = buildHeaders(fileInfo, strategy, fileInfo.getSize(), false);
         return ResponseEntity.ok().headers(headers).body(stream);
+    }
+
+    /**
+     * 预览生成失败时的响应：返回 500 + 纯文本原因，前端预览页可直接展示。
+     */
+    private ResponseEntity<StreamingResponseBody> previewFailureResponse(Exception e) {
+        String reason = e.getMessage() != null && !e.getMessage().isBlank()
+                ? e.getMessage()
+                : e.getClass().getSimpleName();
+        byte[] body = ("预览生成失败: " + reason).getBytes(StandardCharsets.UTF_8);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+                .body(outputStream -> outputStream.write(body));
+    }
+
+    private void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // 忽略关闭异常
+        }
     }
 
     private ResponseEntity<StreamingResponseBody> handleRangeRequest(
